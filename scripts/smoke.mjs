@@ -1,24 +1,22 @@
-// Opens the real page in a headless browser and checks that the dream runs:
-// frames advance, captions change, nothing errors, and nothing piles up.
-// Headless Chromium draws WebGL on the CPU, so frame rates here are a floor.
+// Opens the real page in a headless browser and checks that the slideshow
+// runs: pictures are drawn, captions change, missing pictures are skipped,
+// phones get a full-screen picture, and nothing errors.
 
 import http from 'node:http';
 import path from 'node:path';
 import { mkdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { EMOJI } from '../src/words.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = path.join(root, 'smoke-out');
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json',
+  '.tsv': 'text/tab-separated-values; charset=utf-8',
+  '.jpg': 'image/jpeg',
 };
-const RUN_SECONDS = 40;
-const SAMPLE_SECONDS = 5;
-const GEOMETRY_LIMIT = 8; // five shapes, one floor, the screen quad, one spare
-const TEXTURE_LIMIT = EMOJI.length * 2 + 8; // both variants of every emoji, plus floors
 
 const failures = [];
 function check(name, ok, detail = '') {
@@ -43,97 +41,97 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}/`;
 await mkdir(outDir, { recursive: true });
 
-async function openPage(args) {
-  const browser = await chromium.launch({ args });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const browser = await chromium.launch();
+
+async function openPage(viewport, { onlyPictures } = {}) {
+  const page = await browser.newPage({ viewport });
   const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(`console: ${message.text()}`);
+    // A deliberately missing picture logs a 404; that is the case under test.
+    if (message.type() === 'error' && !(onlyPictures && /404/.test(message.text()))) {
+      errors.push(message.text());
+    }
   });
-  page.on('pageerror', (error) => errors.push(`page: ${error.message}`));
-  await page.goto(url, { waitUntil: 'load' });
-  return { browser, page, errors };
-}
-
-async function dreamRuns() {
-  const { browser, page, errors } = await openPage(['--enable-unsafe-swiftshader']);
-  const dream = (expression) => page.evaluate(`window.__dream.${expression}`);
-  const captionText = () => page.textContent('#caption');
-
-  await sleep(3);
-  const startedFrames = await dream('frames()');
-  check('frames advance', startedFrames > 30, `${startedFrames} frames in 3 s`);
-  check('camera moves forward', (await dream('distance()')) > 5);
-  check('WebGL fallback stays hidden', await page.isHidden('#nogl'));
-
-  const lofi = await dream('lofiSize()');
-  const buffer = await page.evaluate(() => {
-    const view = document.getElementById('view');
-    return { width: view.width, height: view.height };
-  });
-  check('short side is 180 pixels', lofi.height === 180 && lofi.width === 320, `${lofi.width}x${lofi.height}`);
-  check('canvas itself is low resolution', buffer.width === 320 && buffer.height === 180, `${buffer.width}x${buffer.height}`);
-
-  const firstCaption = await captionText();
-  check('caption is shown', firstCaption.trim().length >= 8, firstCaption);
-  await page.screenshot({ path: path.join(outDir, 'at-03s.png') });
-
-  const captions = new Set([firstCaption]);
-  const samples = [];
-  for (let elapsed = 3; elapsed < RUN_SECONDS; elapsed += SAMPLE_SECONDS) {
-    await sleep(SAMPLE_SECONDS);
-    captions.add(await captionText());
-    samples.push({ ...(await dream('stats()')), ...(await dream('info()')) });
-    if (elapsed + SAMPLE_SECONDS === 23) await page.screenshot({ path: path.join(outDir, 'at-23s.png') });
+  if (onlyPictures) {
+    await page.route('**/images/*.jpg', (route) =>
+      onlyPictures.some((id) => route.request().url().endsWith(`/${id}.jpg`))
+        ? route.continue()
+        : route.fulfill({ status: 404, body: '' }),
+    );
   }
-  await page.screenshot({ path: path.join(outDir, 'at-end.png') });
-
-  const max = (key) => Math.max(...samples.map((sample) => sample[key]));
-  check('caption changes', captions.size >= 4, `${captions.size} different captions`);
-  check('always 8 live segments', samples.every((sample) => sample.segments === 8));
-  check('object cap holds', max('objects') <= 150, `peak ${max('objects')}`);
-  check('floor textures are released', max('floors') <= 3, `peak ${max('floors')}`);
-  check('geometries do not pile up', max('geometries') <= GEOMETRY_LIMIT, `peak ${max('geometries')}`);
-  check('textures do not pile up', max('textures') <= TEXTURE_LIMIT, `peak ${max('textures')}`);
-
-  const frames = await dream('frames()');
-  const distance = await dream('distance()');
-  const fps = (frames - startedFrames) / (RUN_SECONDS - 3);
-  check('crossed into another zone', distance > 160, `travelled ${distance.toFixed(0)} units`);
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await sleep(1);
-  const phone = await dream('lofiSize()');
-  const box = await page.evaluate(() => {
-    const rect = document.getElementById('view').getBoundingClientRect();
-    return { width: rect.width, height: rect.height };
-  });
-  check('phone: short side stays 180 pixels', phone.width === 180 && phone.height === Math.round((180 * 844) / 390), `${phone.width}x${phone.height}`);
-  // An upright phone would get a 35 degree slot if the vertical angle stayed at 70.
-  const sideways = await dream('horizontalFov()');
-  check('phone: view is not a narrow slot', sideways >= 55, `${sideways.toFixed(0)} degrees across`);
-  check('phone: canvas fills the screen', box.width === 390 && box.height === 844, `${box.width}x${box.height}`);
-  await page.screenshot({ path: path.join(outDir, 'phone.png') });
-
-  check('no errors', errors.length === 0, errors.join(' | '));
-  console.log(`     software-rendered frame rate: ${fps.toFixed(1)} fps (a floor, not what a GPU gives)`);
-  await browser.close();
+  await page.goto(url, { waitUntil: 'load' });
+  return { page, errors };
 }
 
-async function fallbackWithoutWebGL() {
-  const { browser, page, errors } = await openPage(['--disable-3d-apis']);
-  await sleep(1);
-  check('without WebGL: message is shown', await page.isVisible('#nogl'));
-  const uncaught = errors.filter((error) => error.startsWith('page:'));
-  check('without WebGL: no uncaught errors', uncaught.length === 0, uncaught.join(' | '));
-  await page.screenshot({ path: path.join(outDir, 'no-webgl.png') });
-  await browser.close();
+// Mean brightness of what the canvas shows, 0-255.
+const brightness = (page) =>
+  page.evaluate(() => {
+    const view = document.getElementById('view');
+    const { data } = view.getContext('2d').getImageData(0, 0, view.width, view.height);
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) sum += data[i] + data[i + 1] + data[i + 2];
+    return sum / (data.length / 4) / 3;
+  });
+
+const canvasSize = (page) =>
+  page.evaluate(() => {
+    const view = document.getElementById('view');
+    const box = view.getBoundingClientRect();
+    return { w: view.width, h: view.height, cssW: box.width, cssH: box.height };
+  });
+
+async function desktop() {
+  const { page, errors } = await openPage({ width: 1280, height: 720 });
+  await sleep(2);
+  const size = await canvasSize(page);
+  check('canvas is drawn small', size.w === 320 && size.h === 180, `${size.w}x${size.h}`);
+  check('a picture is on screen', (await brightness(page)) > 10);
+  await page.screenshot({ path: path.join(outDir, 'desktop.png') });
+
+  const captions = new Set([await page.textContent('#caption')]);
+  let darkest = 255;
+  for (let i = 0; i < 18; i++) {
+    await sleep(1);
+    captions.add(await page.textContent('#caption'));
+    darkest = Math.min(darkest, await brightness(page));
+  }
+  await page.screenshot({ path: path.join(outDir, 'desktop-later.png') });
+  check('never goes black between pictures', darkest > 10, `darkest frame brightness ${darkest.toFixed(0)}`);
+  check('captions change every few seconds', captions.size >= 3, `${captions.size} captions in 20 s`);
+  check('desktop: no errors', errors.length === 0, errors.join(' | '));
+  await page.close();
+}
+
+async function phone() {
+  const { page, errors } = await openPage({ width: 390, height: 844 });
+  await sleep(2);
+  const size = await canvasSize(page);
+  check('phone: short side 180 pixels', size.w === 180 && size.h === Math.round((180 * 844) / 390), `${size.w}x${size.h}`);
+  check('phone: fills the screen', size.cssW === 390 && size.cssH === 844, `${size.cssW}x${size.cssH}`);
+  check('phone: a picture is on screen', (await brightness(page)) > 10);
+  await page.screenshot({ path: path.join(outDir, 'phone.png') });
+  check('phone: no errors', errors.length === 0, errors.join(' | '));
+  await page.close();
+}
+
+async function missingPictures() {
+  const ready = JSON.parse(await readFile(path.join(root, 'images/index.json'), 'utf8'));
+  const keep = ready.slice(0, 2);
+  const { page, errors } = await openPage({ width: 640, height: 360 }, { onlyPictures: keep });
+  await sleep(14);
+  const shown = await page.evaluate(() => window.__dream.shown());
+  check('missing pictures are skipped and the show goes on', shown >= 3, `${shown} slides shown with only ${keep.length} loadable`);
+  check('missing pictures: no other errors', errors.length === 0, errors.join(' | '));
+  await page.close();
 }
 
 try {
-  await dreamRuns();
-  await fallbackWithoutWebGL();
+  await desktop();
+  await phone();
+  await missingPictures();
 } finally {
+  await browser.close();
   server.close();
 }
 
