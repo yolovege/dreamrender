@@ -86,6 +86,7 @@ function makeObject(rng, zone) {
     motion,
     speed: rng.range(0.3, 2),
     phase: rng.range(0, Math.PI * 2),
+    hue: rng.next(), // tint of a solid's surface behind its emoji
   };
 }
 

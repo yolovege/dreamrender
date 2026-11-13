@@ -79,13 +79,14 @@ test('every object over 1000 segments is well formed', () => {
       assert.ok(emoji.has(o.emoji));
       assert.ok(SHAPES.includes(o.shape));
       assert.ok(allowed.has(o.motion), `motion ${o.motion} not in zone`);
-      for (const key of ['x', 'y', 'z', 'scale', 'speed', 'phase']) {
+      for (const key of ['x', 'y', 'z', 'scale', 'speed', 'phase', 'hue']) {
         assert.ok(Number.isFinite(o[key]), `${key} = ${o[key]}`);
       }
       assert.ok(o.z >= 0 && o.z <= SEGMENT_LENGTH);
       assert.ok(Math.abs(o.x) <= WORLD_HALF_WIDTH);
       assert.ok(o.scale > 0);
       assert.ok(o.y >= 0);
+      assert.ok(o.hue >= 0 && o.hue < 1);
       if (o.motion !== 'cross') assert.ok(Math.abs(o.x) >= ROAD_HALF_WIDTH, `x ${o.x} blocks the road`);
       shapes.add(o.shape);
       used.add(o.emoji);
