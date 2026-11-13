@@ -9,19 +9,19 @@ const ready = JSON.parse(await readFile(new URL('../images/index.json', import.m
 const files = (await readdir(new URL('../images/', import.meta.url))).filter((f) => f.endsWith('.jpg'));
 
 test('parseScenes reads tab-separated lines and skips comments and blanks', () => {
-  const parsed = parseScenes('# header\n001\t甲乙。\tan apple\n\n002\t丙丁？\ta pear\n');
+  const parsed = parseScenes('# header\n001\t甲乙。\tA B.\tan apple\n\n002\t丙丁？\tC D?\ta pear\n');
   assert.deepEqual(parsed, [
-    { id: '001', caption: '甲乙。', prompt: 'an apple' },
-    { id: '002', caption: '丙丁？', prompt: 'a pear' },
+    { id: '001', zh: '甲乙。', en: 'A B.', prompt: 'an apple' },
+    { id: '002', zh: '丙丁？', en: 'C D?', prompt: 'a pear' },
   ]);
 });
 
 test('parseScenes tolerates Windows line endings', () => {
-  assert.deepEqual(parseScenes('001\t甲。\tx\r\n'), [{ id: '001', caption: '甲。', prompt: 'x' }]);
+  assert.deepEqual(parseScenes('001\t甲。\tA.\tx\r\n'), [{ id: '001', zh: '甲。', en: 'A.', prompt: 'x' }]);
 });
 
-test('parseScenes rejects a line without three columns, naming the line', () => {
-  assert.throws(() => parseScenes('001\t甲。\tx\n002\t乙。\n'), /line 2/);
+test('parseScenes rejects a line without four columns, naming the line', () => {
+  assert.throws(() => parseScenes('001\t甲。\tA.\tx\n002\t乙。\tx\n'), /line 2/);
 });
 
 test('the scene list has 500 well-formed scenes with unique ids', () => {
@@ -29,9 +29,12 @@ test('the scene list has 500 well-formed scenes with unique ids', () => {
   assert.equal(new Set(scenes.map((s) => s.id)).size, scenes.length);
   for (const s of scenes) {
     assert.match(s.id, /^\d{3,}$/, `bad id ${s.id}`);
-    const length = [...s.caption].length;
-    assert.ok(length >= 8 && length <= 45, `caption length ${length}: ${s.caption}`);
-    assert.match(s.caption, /[。？！]$/, `caption ending: ${s.caption}`);
+    const length = [...s.zh].length;
+    assert.ok(length >= 8 && length <= 45, `caption length ${length}: ${s.zh}`);
+    assert.match(s.zh, /[。？！]$/, `caption ending: ${s.zh}`);
+    assert.ok(s.en.length >= 10 && s.en.length <= 120, `English caption length ${s.en.length}: ${s.en}`);
+    assert.match(s.en, /[.?!]$/, `English caption ending: ${s.en}`);
+    assert.doesNotMatch(s.en, /[\u3000-\u9fff\uff00-\uffef]/, `Chinese in the English caption: ${s.en}`);
     assert.ok(s.prompt.length >= 20, `prompt too short for ${s.id}`);
   }
 });

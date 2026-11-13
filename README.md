@@ -1,6 +1,6 @@
 # dreamrender
 
-打開就一直播的網頁：每 6 秒一句毫無意義、但合文法的中文句子，配一張用 AI 預先畫好的圖，
+打開就一直播的網頁：每 6 秒一句毫無意義、但合文法的句子（中英對照），配一張用 AI 預先畫好的圖，
 看起來像 90 年代家庭錄影帶裡的一場夢。
 
 純靜態網頁，觀眾打開時不呼叫任何 AI 服務。圖是事先用 Cloudflare Workers AI 的 FLUX.1 [schnell] 生好的。
@@ -15,15 +15,18 @@ npm start   # 等同 python3 -m http.server 8000
 
 ## 加新的句子和圖
 
-所有句子都在 `data/scenes.tsv`，一行一句，三欄用 Tab 分開：
+所有句子都在 `data/scenes.tsv`，一行一句，四欄用 Tab 分開：
 
 ```
-編號	中文字幕	英文畫面描述
-501	洗衣機今天決定改當旋轉木馬。	a washing machine in a laundromat at night spinning like a tiny carousel with horses inside
+編號	中文字幕	英文字幕	英文畫面描述
+501	洗衣機今天決定改當旋轉木馬。	Today the washing machine decided to become a merry-go-round.	a washing machine in a laundromat at night spinning like a tiny carousel with horses inside
 ```
 
-1. **加句子**：在檔案最後加一行。編號接著最後一個往下編。字幕 8 到 45 個字，結尾是「。」「？」「！」其中之一。
-   英文畫面描述要寫成具體的畫面，不是逐字翻譯；不想自己寫可以請 Claude 幫忙。
+1. **加句子**：在檔案最後加一行。編號接著最後一個往下編。
+   - 中文字幕 8 到 45 個字，結尾是「。」「？」「！」其中之一。
+   - 英文字幕是畫面下方那行翻譯，120 個字元以內，結尾是 `.` `?` `!`。
+   - 英文畫面描述是給 AI 畫圖用的，要寫成具體的畫面，不是翻譯。
+   - 英文兩欄不想自己寫，可以請 Claude 幫忙。
 2. **配圖**，二選一：
    - **讓 AI 畫**：跑 `npm run render`。它只會畫還沒有圖的句子。
    - **用自己的圖**：把圖存成 `images/<編號>.jpg`（也可以是 `.png`、`.webp`，任何尺寸），再跑 `npm run render`。
@@ -75,7 +78,7 @@ npm run smoke                    # 用無頭瀏覽器實際播 20 多秒，截�
 
 | 檔案 | 做什麼 |
 |---|---|
-| `data/scenes.tsv` | 所有句子：編號、中文字幕、英文畫面描述 |
+| `data/scenes.tsv` | 所有句子：編號、中文字幕、英文字幕、英文畫面描述 |
 | `images/<編號>.jpg` | 每句的圖，384×384 |
 | `images/index.json` | 哪些句子已經有圖（`npm run render` 會自動更新） |
 | `scripts/render_images.py` | 補畫缺的圖、轉換手動放的圖 |

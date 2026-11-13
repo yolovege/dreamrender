@@ -53,9 +53,9 @@ def read_scenes():
         if not line.strip() or line.startswith("#"):
             continue
         parts = line.split("\t")
-        if len(parts) != 3:
-            sys.exit(f"data/scenes.tsv 第 {number} 行：要有編號、字幕、畫面描述三欄，用 Tab 分開")
-        scenes.append({"id": parts[0].strip(), "caption": parts[1].strip(), "prompt": parts[2].strip()})
+        if len(parts) != 4:
+            sys.exit(f"data/scenes.tsv 第 {number} 行：要有編號、中文字幕、英文字幕、畫面描述四欄，用 Tab 分開")
+        scenes.append({"id": parts[0].strip(), "prompt": parts[3].strip()})
     return scenes
 
 

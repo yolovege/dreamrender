@@ -89,6 +89,8 @@ async function desktop() {
   check('a picture is on screen', (await brightness(page)) > 10);
   await page.screenshot({ path: path.join(outDir, 'desktop.png') });
 
+  const english = await page.textContent('#en');
+  check('English caption under the Chinese one', /^[\x20-\x7e’]+[.?!]$/.test(english), english);
   const captions = new Set([await page.textContent('#caption')]);
   let darkest = 255;
   for (let i = 0; i < 18; i++) {
@@ -110,6 +112,8 @@ async function phone() {
   check('phone: short side 180 pixels', size.w === 180 && size.h === Math.round((180 * 844) / 390), `${size.w}x${size.h}`);
   check('phone: fills the screen', size.cssW === 390 && size.cssH === 844, `${size.cssW}x${size.cssH}`);
   check('phone: a picture is on screen', (await brightness(page)) > 10);
+  const box = await page.evaluate(() => document.getElementById('caption').getBoundingClientRect());
+  check('phone: both caption lines fit on screen', box.left >= 0 && box.right <= 390 && box.top > 844 / 2, `caption box ${Math.round(box.left)}–${Math.round(box.right)} px, top ${Math.round(box.top)} px`);
   await page.screenshot({ path: path.join(outDir, 'phone.png') });
   check('phone: no errors', errors.length === 0, errors.join(' | '));
   await page.close();

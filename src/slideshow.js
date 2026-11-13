@@ -17,6 +17,8 @@ const MAX_DT = 0.1; // a long pause (hidden tab) counts as this much time
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const captionBox = document.getElementById('caption');
+const zhLine = document.getElementById('zh');
+const enLine = document.getElementById('en');
 const stillMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 function loadPicture(scene) {
@@ -81,7 +83,8 @@ async function start() {
     upcoming = null;
     slide.drift = shown++;
     slides.push(slide);
-    captionBox.textContent = slide.scene.caption;
+    zhLine.textContent = slide.scene.zh;
+    enLine.textContent = slide.scene.en;
     captionBox.classList.add('on');
     prepareNext();
   }
@@ -121,6 +124,7 @@ async function start() {
 
 start().catch((error) => {
   console.error(error);
-  captionBox.textContent = '夢載入失敗，請重新整理。';
+  zhLine.textContent = '夢載入失敗，請重新整理。';
+  enLine.textContent = 'The dream failed to load. Please refresh.';
   captionBox.classList.add('on');
 });
