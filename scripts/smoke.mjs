@@ -66,6 +66,14 @@ async function dreamRuns() {
   check('camera moves forward', (await dream('distance()')) > 5);
   check('WebGL fallback stays hidden', await page.isHidden('#nogl'));
 
+  const lofi = await dream('lofiSize()');
+  const buffer = await page.evaluate(() => {
+    const view = document.getElementById('view');
+    return { width: view.width, height: view.height };
+  });
+  check('short side is 180 pixels', lofi.height === 180 && lofi.width === 320, `${lofi.width}x${lofi.height}`);
+  check('canvas itself is low resolution', buffer.width === 320 && buffer.height === 180, `${buffer.width}x${buffer.height}`);
+
   const firstCaption = await captionText();
   check('caption is shown', firstCaption.trim().length >= 8, firstCaption);
   await page.screenshot({ path: path.join(outDir, 'at-03s.png') });
@@ -92,6 +100,21 @@ async function dreamRuns() {
   const distance = await dream('distance()');
   const fps = (frames - startedFrames) / (RUN_SECONDS - 3);
   check('crossed into another zone', distance > 160, `travelled ${distance.toFixed(0)} units`);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await sleep(1);
+  const phone = await dream('lofiSize()');
+  const box = await page.evaluate(() => {
+    const rect = document.getElementById('view').getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  });
+  check('phone: short side stays 180 pixels', phone.width === 180 && phone.height === Math.round((180 * 844) / 390), `${phone.width}x${phone.height}`);
+  // An upright phone would get a 35 degree slot if the vertical angle stayed at 70.
+  const sideways = await dream('horizontalFov()');
+  check('phone: view is not a narrow slot', sideways >= 55, `${sideways.toFixed(0)} degrees across`);
+  check('phone: canvas fills the screen', box.width === 390 && box.height === 844, `${box.width}x${box.height}`);
+  await page.screenshot({ path: path.join(outDir, 'phone.png') });
+
   check('no errors', errors.length === 0, errors.join(' | '));
   console.log(`     software-rendered frame rate: ${fps.toFixed(1)} fps (a floor, not what a GPU gives)`);
   await browser.close();

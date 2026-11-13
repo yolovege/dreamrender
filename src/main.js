@@ -5,8 +5,11 @@ import { createRng } from './rng.js';
 import { createCaptionStream } from './captions.js';
 import { MAX_DT, stepDistance } from './road.js';
 import { createWorld } from './world.js';
+import { createLofi } from './lofi.js';
 
 const EYE_HEIGHT = 1.7;
+const FIELD_OF_VIEW = 70; // degrees, across the short side of the screen
+const MAX_VERTICAL_FOV = 100;
 const CAPTION_SECONDS = 6;
 const CAPTION_FADE_SECONDS = 0.6; // matches the CSS transition on #caption
 
@@ -27,15 +30,20 @@ function createRenderer() {
 function start(renderer) {
   const seed = Math.floor(Math.random() * 2 ** 32);
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 200);
+  const camera = new THREE.PerspectiveCamera(FIELD_OF_VIEW, 1, 0.1, 200);
   camera.rotation.order = 'YXZ';
   const world = createWorld(scene, seed);
+  const lofi = createLofi(renderer);
   const captions = createCaptionStream(createRng(seed));
 
   function resize() {
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    lofi.resize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
+    // three.js takes the vertical angle. On an upright phone that would leave
+    // a narrow slot to look through, so widen it to keep the sideways view.
+    const halfTan = Math.tan(THREE.MathUtils.degToRad(FIELD_OF_VIEW / 2));
+    const vertical = 2 * THREE.MathUtils.radToDeg(Math.atan(halfTan / Math.min(camera.aspect, 1)));
+    camera.fov = Math.min(vertical, MAX_VERTICAL_FOV);
     camera.updateProjectionMatrix();
   }
   window.addEventListener('resize', resize);
@@ -79,7 +87,7 @@ function start(renderer) {
     sleepwalk();
     world.update(distance, time, camera);
     caption(dt);
-    renderer.render(scene, camera);
+    lofi.render(scene, camera);
 
     frames++;
     fpsFrames++;
@@ -97,6 +105,9 @@ function start(renderer) {
     distance: () => distance,
     frames: () => frames,
     stats: () => world.stats(),
+    lofiSize: () => lofi.size(),
+    horizontalFov: () =>
+      2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect)),
     info: () => ({
       geometries: renderer.info.memory.geometries,
       textures: renderer.info.memory.textures,

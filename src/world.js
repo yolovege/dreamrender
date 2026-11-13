@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { drawEmoji, emojiTexture, pixelTexture } from './emoji-texture.js';
+import { snapVertices } from './lofi.js';
 import {
   SEGMENT_LENGTH, WORLD_HALF_WIDTH, FOG_NEAR, FOG_FAR,
   visibleSegments, makeSegment, makeZone, skyAt,
@@ -67,27 +68,27 @@ export function createWorld(scene, seed) {
   function boardMaterial(emoji) {
     let material = boards.get(emoji);
     if (!material) {
-      material = new THREE.MeshBasicMaterial({
+      material = snapVertices(new THREE.MeshBasicMaterial({
         map: emojiTexture(emoji), alphaTest: 0.5, side: THREE.DoubleSide,
-      });
+      }));
       boards.set(emoji, material);
     }
     return material;
   }
 
   function solidMaterial(spec) {
-    return new THREE.MeshLambertMaterial({
+    return snapVertices(new THREE.MeshLambertMaterial({
       map: emojiTexture(spec.emoji, true),
       color: new THREE.Color().setHSL(spec.hue, 0.7, 0.7, THREE.SRGBColorSpace),
       flatShading: true,
-    });
+    }));
   }
 
   function takeFloor(zoneIndex) {
     let floor = floors.get(zoneIndex);
     if (!floor) {
       floor = {
-        material: new THREE.MeshBasicMaterial({ map: floorTexture(makeZone(seed, zoneIndex)) }),
+        material: snapVertices(new THREE.MeshBasicMaterial({ map: floorTexture(makeZone(seed, zoneIndex)) })),
         users: 0,
       };
       floors.set(zoneIndex, floor);
