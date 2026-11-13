@@ -43,21 +43,20 @@ await mkdir(outDir, { recursive: true });
 
 const browser = await chromium.launch();
 
-async function openPage(viewport, { onlyPictures } = {}) {
+// allowPicture(url) decides, at request time, whether a picture loads or 404s.
+async function openPage(viewport, { allowPicture } = {}) {
   const page = await browser.newPage({ viewport });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
     // A deliberately missing picture logs a 404; that is the case under test.
-    if (message.type() === 'error' && !(onlyPictures && /404/.test(message.text()))) {
+    if (message.type() === 'error' && !(allowPicture && /404/.test(message.text()))) {
       errors.push(message.text());
     }
   });
-  if (onlyPictures) {
+  if (allowPicture) {
     await page.route('**/images/*.jpg', (route) =>
-      onlyPictures.some((id) => route.request().url().endsWith(`/${id}.jpg`))
-        ? route.continue()
-        : route.fulfill({ status: 404, body: '' }),
+      allowPicture(route.request().url()) ? route.continue() : route.fulfill({ status: 404, body: '' }),
     );
   }
   await page.goto(url, { waitUntil: 'load' });
@@ -119,14 +118,48 @@ async function phone() {
   await page.close();
 }
 
+const shownCount = (page) => page.evaluate(() => window.__dream?.shown() ?? 0);
+
+// Resolves true once at least `count` slides have been shown, false after `seconds`.
+const reaches = (page, count, seconds) =>
+  page
+    .waitForFunction((n) => (window.__dream?.shown() ?? 0) >= n, count, { timeout: seconds * 1000 })
+    .then(() => true, () => false);
+
 async function missingPictures() {
   const ready = JSON.parse(await readFile(path.join(root, 'images/index.json'), 'utf8'));
   const keep = ready.slice(0, 2);
-  const { page, errors } = await openPage({ width: 640, height: 360 }, { onlyPictures: keep });
-  await sleep(14);
-  const shown = await page.evaluate(() => window.__dream.shown());
-  check('missing pictures are skipped and the show goes on', shown >= 3, `${shown} slides shown with only ${keep.length} loadable`);
+  const allowPicture = (url) => keep.some((id) => url.endsWith(`/${id}.jpg`));
+  const { page, errors } = await openPage({ width: 640, height: 360 }, { allowPicture });
+  const ok = await reaches(page, 5, 40);
+  check('missing pictures are skipped and the show goes on', ok, `${await shownCount(page)} slides shown with only ${keep.length} of ${ready.length} loadable`);
   check('missing pictures: no other errors', errors.length === 0, errors.join(' | '));
+  await page.close();
+}
+
+async function networkDrop() {
+  let offline = false;
+  const { page, errors } = await openPage({ width: 640, height: 360 }, { allowPicture: () => !offline });
+  await reaches(page, 1, 10);
+  offline = true;
+  await sleep(10); // long enough for the next picture to fail to load
+  const before = await shownCount(page);
+  offline = false;
+  const ok = await reaches(page, before + 1, 15);
+  check('carries on after the network drops and comes back', ok, `${before} before the drop, ${await shownCount(page)} after`);
+  check('network drop: no other errors', errors.length === 0, errors.join(' | '));
+  await page.close();
+}
+
+async function startOffline() {
+  let offline = true;
+  const { page, errors } = await openPage({ width: 640, height: 360 }, { allowPicture: () => !offline });
+  await sleep(3);
+  check('offline at start: says it will start by itself', /網路恢復/.test(await page.textContent('#caption')));
+  offline = false;
+  const ok = await reaches(page, 1, 15);
+  check('offline at start: starts once pictures load', ok);
+  check('offline at start: no other errors', errors.length === 0, errors.join(' | '));
   await page.close();
 }
 
@@ -134,6 +167,8 @@ try {
   await desktop();
   await phone();
   await missingPictures();
+  await networkDrop();
+  await startOffline();
 } finally {
   await browser.close();
   server.close();

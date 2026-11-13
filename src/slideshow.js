@@ -13,6 +13,7 @@ const SHORT_SIDE = 180; // pixels the picture is drawn at before being blown up
 const ZOOM_FROM = 1.05;
 const ZOOM_TO = 1.17;
 const MAX_DT = 0.1; // a long pause (hidden tab) counts as this much time
+const RETRY_SECONDS = 3; // wait after a whole round of pictures failed to load (offline)
 
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -20,6 +21,12 @@ const captionBox = document.getElementById('caption');
 const zhLine = document.getElementById('zh');
 const enLine = document.getElementById('en');
 const stillMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function say(zh, en) {
+  zhLine.textContent = zh;
+  enLine.textContent = en;
+  captionBox.classList.add('on');
+}
 
 function loadPicture(scene) {
   return new Promise((resolve) => {
@@ -65,14 +72,20 @@ async function start() {
   let upcoming = null; // the next slide, once its picture has loaded
   let shown = 0;
 
+  // Keeps trying until a picture loads: if the connection drops, the show
+  // holds the current picture and carries on once it is back.
   async function prepareNext() {
-    for (let tries = 0; tries < scenes.length; tries++) {
-      const scene = deck.next();
-      const img = await loadPicture(scene);
-      if (img) {
-        upcoming = { scene, img, age: 0, drift: 0 };
-        return;
+    for (;;) {
+      for (let tries = 0; tries < scenes.length; tries++) {
+        const scene = deck.next();
+        const img = await loadPicture(scene);
+        if (img) {
+          upcoming = { scene, img, age: 0, drift: 0 };
+          return;
+        }
       }
+      if (shown === 0) say('夢還在路上，網路恢復後會自己開始。', 'The dream is on its way. It will start once the connection is back.');
+      await new Promise((resolve) => setTimeout(resolve, RETRY_SECONDS * 1000));
     }
   }
 
@@ -83,14 +96,11 @@ async function start() {
     upcoming = null;
     slide.drift = shown++;
     slides.push(slide);
-    zhLine.textContent = slide.scene.zh;
-    enLine.textContent = slide.scene.en;
-    captionBox.classList.add('on');
+    say(slide.scene.zh, slide.scene.en);
     prepareNext();
   }
 
   await prepareNext();
-  if (!upcoming) throw new Error('no picture could be loaded');
   resize();
   window.addEventListener('resize', resize);
   bringOnNext();
@@ -124,7 +134,5 @@ async function start() {
 
 start().catch((error) => {
   console.error(error);
-  zhLine.textContent = '夢載入失敗，請重新整理。';
-  enLine.textContent = 'The dream failed to load. Please refresh.';
-  captionBox.classList.add('on');
+  say('夢載入失敗，請重新整理。', 'The dream failed to load. Please refresh.');
 });
